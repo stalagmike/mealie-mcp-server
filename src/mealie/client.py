@@ -138,8 +138,8 @@ class MealieClient:
                 {"message": "Error traceback", "traceback": traceback.format_exc()}
             )
             raise ConnectionError(error_msg) from e
-        except httpx.TransportError as e:
-            # Network-level failure (connect timeout, DNS, refused, read
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            # Transient network failure (connect timeout, DNS, refused, read
             # timeout): the Mealie host is often just not reachable *yet* —
             # VPN still connecting, container still booting, laptop just
             # resumed. Taking the whole MCP server down for that means the

@@ -35,6 +35,10 @@ def _unauthorized(request):
     return httpx.Response(401, json={"detail": "nope"})
 
 
+def _bad_scheme(request):
+    raise httpx.UnsupportedProtocol("no scheme", request=request)
+
+
 def _ok(request):
     return httpx.Response(200, json={"version": "2.0.0"})
 
@@ -53,6 +57,13 @@ try:
     raise AssertionError("expected HTTP 401 to abort startup")
 except ConnectionError as e:
     assert "MEALIE_API_KEY" in str(e), e
+
+# A misconfigured base URL is permanent, not transient: still fatal.
+try:
+    _client(_bad_scheme)
+    raise AssertionError("expected UnsupportedProtocol to abort startup")
+except httpx.UnsupportedProtocol:
+    pass
 
 # Happy path.
 assert _client(_ok)._handle_request("GET", "/api/app/about")["version"] == "2.0.0"
