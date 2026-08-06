@@ -5,7 +5,7 @@ import traceback
 from typing import Any, Dict
 
 import httpx
-from httpx import ConnectError, HTTPStatusError, ReadTimeout
+from httpx import HTTPStatusError, ReadTimeout
 
 logger = logging.getLogger("mealie-mcp")
 
@@ -122,13 +122,6 @@ class MealieClient:
             response = self._client.get("/api/app/about")
             response.raise_for_status()
             logger.info({"message": "Successfully connected to Mealie API"})
-        except ConnectError as e:
-            error_msg = f"Failed to connect to Mealie API at {base_url}: {str(e)}"
-            logger.error({"message": error_msg})
-            logger.debug(
-                {"message": "Error traceback", "traceback": traceback.format_exc()}
-            )
-            raise ConnectionError(error_msg) from e
         except HTTPStatusError as e:
             status_code = e.response.status_code
             hint = (
@@ -145,6 +138,22 @@ class MealieClient:
                 {"message": "Error traceback", "traceback": traceback.format_exc()}
             )
             raise ConnectionError(error_msg) from e
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            # Transient network failure (connect timeout, DNS, refused, read
+            # timeout): the Mealie host is often just not reachable *yet* —
+            # VPN still connecting, container still booting, laptop just
+            # resumed. Taking the whole MCP server down for that means the
+            # client never reconnects; every tool call re-attempts the request
+            # and reports the failure itself, so start up degraded instead.
+            logger.warning(
+                {
+                    "message": (
+                        f"Mealie API at {base_url} is not reachable yet "
+                        f"({type(e).__name__}: {e}); starting anyway and will "
+                        "retry on the first request."
+                    )
+                }
+            )
         except Exception as e:
             error_msg = f"Error initializing Mealie client: {str(e)}"
             logger.error({"message": error_msg})
@@ -274,8 +283,11 @@ class MealieClient:
             )
             raise TimeoutError(error_msg)
 
-        except ConnectError as e:
-            error_msg = f"Connection error for {method} {url}: {str(e)}"
+        except httpx.TransportError as e:
+            # Covers ConnectError, ConnectTimeout and friends — without this a
+            # connect timeout escaped as a bare httpx error whose message is
+            # just "timed out".
+            error_msg = f"Connection error for {method} {url}: {type(e).__name__}: {e}"
             logger.error(
                 {"message": error_msg, "method": method, "url": url, "error": str(e)}
             )
