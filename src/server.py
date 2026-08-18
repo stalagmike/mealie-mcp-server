@@ -2,6 +2,7 @@ import argparse
 import ipaddress
 import logging
 import os
+import stat
 import sys
 import traceback
 
@@ -123,6 +124,22 @@ def _parse_timeout(raw: str | None) -> float:
     return timeout
 
 
+def _launched_over_stdio_pipe() -> bool:
+    """True when stdin is a pipe, i.e. an MCP client spawned us as a child.
+
+    Claude Desktop — and every Cowork / Code session, which each run their own
+    copy of the server — launch MCP servers with stdin wired to a pipe and
+    expect JSON-RPC on stdout. A daemon started by launchd/systemd gets
+    /dev/null (a character device) and an interactive run gets a tty, so
+    neither is mistaken for a stdio client.
+    """
+    try:
+        return stat.S_ISFIFO(os.fstat(sys.stdin.fileno()).st_mode)
+    except (OSError, ValueError, AttributeError):
+        # No usable stdin (closed, or replaced by a non-file object).
+        return False
+
+
 def _resolve_transport(cli_stdio: bool, cli_transport: str | None) -> str:
     """Resolve which transport to run.
 
@@ -130,7 +147,8 @@ def _resolve_transport(cli_stdio: bool, cli_transport: str | None) -> str:
       1. ``--stdio`` CLI flag
       2. ``--transport`` CLI flag
       3. ``MEALIE_MCP_TRANSPORT`` env var
-      4. Default: ``sse``
+      4. ``stdio`` when an MCP client spawned us with a pipe on stdin
+      5. Default: ``sse``
     """
     if cli_stdio:
         return "stdio"
@@ -139,6 +157,8 @@ def _resolve_transport(cli_stdio: bool, cli_transport: str | None) -> str:
     env_transport = os.getenv("MEALIE_MCP_TRANSPORT")
     if env_transport:
         return env_transport.strip().lower()
+    if _launched_over_stdio_pipe():
+        return "stdio"
     return "sse"
 
 
