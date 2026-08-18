@@ -30,8 +30,19 @@ def resolve(stdin, env=None):
     ).stdout.strip()
 
 
-# Spawned by an MCP client (Claude Desktop, Cowork, Code): stdin is a pipe.
+# Spawned by an MCP client (Claude Desktop, Cowork, Code): stdin is a pipe...
 assert resolve(subprocess.PIPE) == "stdio"
+
+# ...or a socketpair, which is what Node hands a child process on POSIX — the
+# case that actually shows up in production and that S_ISFIFO alone missed.
+import socket  # noqa: E402
+
+parent, child = socket.socketpair()
+try:
+    assert resolve(child.fileno()) == "stdio"
+finally:
+    parent.close()
+    child.close()
 
 # Daemon under launchd/systemd: stdin is /dev/null, keep the SSE default.
 assert resolve(subprocess.DEVNULL) == "sse"

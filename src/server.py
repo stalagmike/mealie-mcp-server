@@ -124,20 +124,33 @@ def _parse_timeout(raw: str | None) -> float:
     return timeout
 
 
-def _launched_over_stdio_pipe() -> bool:
-    """True when stdin is a pipe, i.e. an MCP client spawned us as a child.
-
-    Claude Desktop — and every Cowork / Code session, which each run their own
-    copy of the server — launch MCP servers with stdin wired to a pipe and
-    expect JSON-RPC on stdout. A daemon started by launchd/systemd gets
-    /dev/null (a character device) and an interactive run gets a tty, so
-    neither is mistaken for a stdio client.
-    """
+def _stdin_kind() -> str:
+    """Classify fd 0 so transport auto-detection is explainable from the logs."""
     try:
-        return stat.S_ISFIFO(os.fstat(sys.stdin.fileno()).st_mode)
+        fd = sys.stdin.fileno()
+        mode = os.fstat(fd).st_mode
     except (OSError, ValueError, AttributeError):
-        # No usable stdin (closed, or replaced by a non-file object).
-        return False
+        # No usable stdin: closed, or replaced by a non-file object.
+        return "none"
+    if stat.S_ISFIFO(mode):
+        return "pipe"
+    if stat.S_ISSOCK(mode):
+        return "socket"
+    if os.isatty(fd):
+        return "tty"
+    return "other"
+
+
+# stdin kinds that mean "a parent process wired this up and is talking to us".
+# Node — which is what Claude Desktop, Cowork and Code spawn MCP servers from —
+# uses a socketpair rather than a pipe for child stdio on POSIX, so both count.
+# A daemon under launchd/systemd gets /dev/null ("other"), an interactive run
+# gets a "tty", and neither is mistaken for a stdio client.
+_CLIENT_SPAWNED_STDIN = frozenset({"pipe", "socket"})
+
+
+def _launched_over_stdio_pipe() -> bool:
+    return _stdin_kind() in _CLIENT_SPAWNED_STDIN
 
 
 def _resolve_transport(cli_stdio: bool, cli_transport: str | None) -> str:
@@ -233,6 +246,7 @@ def _pin_uvicorn_logging_to_stderr() -> None:
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     transport = _resolve_transport(cli_stdio=args.stdio, cli_transport=args.transport)
+    logger.info({"message": "Resolved transport", "transport": transport, "stdin": _stdin_kind()})
     if transport not in VALID_TRANSPORTS:
         raise ValueError(
             f"Unknown transport {transport!r}. Expected one of: {sorted(VALID_TRANSPORTS)}"
