@@ -108,7 +108,7 @@ All settings are read from environment variables (or `.env`):
 | --- | --- | --- |
 | `MEALIE_BASE_URL` | — | Required. Mealie instance URL. |
 | `MEALIE_API_KEY` | — | Required. Mealie API key. |
-| `MEALIE_MCP_TRANSPORT` | `sse` | One of `sse`, `streamable-http`, `stdio`. CLI `--stdio` and `--transport` override this. |
+| `MEALIE_MCP_TRANSPORT` | `sse` | One of `sse`, `streamable-http`, `stdio`. CLI `--stdio` and `--transport` override this. When unset and an MCP client spawned the server with a pipe on stdin (Claude Desktop, Cowork, Code), `stdio` is auto-detected; a daemon under launchd/systemd gets `/dev/null` on stdin and keeps `sse`. |
 | `MEALIE_MCP_HOST` | `127.0.0.1` | Bind host. Non-loopback hosts require `MEALIE_MCP_ALLOW_REMOTE_BIND=1`. |
 | `MEALIE_MCP_PORT` | `8765` | Bind port (1..65535). |
 | `MEALIE_MCP_ALLOW_REMOTE_BIND` | _unset_ | Set to `1` to permit non-loopback bind. **You must put a trusted auth/proxy in front of the server**: it exposes the full authority of `MEALIE_API_KEY` and local-file upload tools to anything that can reach it. |
